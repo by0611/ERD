@@ -1,0 +1,242 @@
+import streamlit as st
+import pandas as pd
+import folium
+from streamlit_folium import st_folium
+import ollama
+
+# ==========================================
+# 1. 頁面配置與 CSS 樣式
+# ==========================================
+st.set_page_config(page_title="智慧銀髮數據決策平台", page_icon="🤖", layout="wide")
+
+# 統一使用高質感深綠色
+DARK_GREEN = "#006400"
+
+st.markdown(f"""
+    <style>
+    .main {{ background-color: #f8f9fa; }}
+    .stMetric {{ background-color: #ffffff; padding: 20px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }}
+    .user-query-box {{ background-color: #ffffff; border-left: 5px solid #6c757d; padding: 15px; border-radius: 5px; color: #495057; font-style: italic; margin-bottom: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }}
+    .ai-command-shell {{ background-color: #000000; color: #39ff14; padding: 15px; border-radius: 8px 8px 0 0; font-family: 'Consolas', monospace; font-size: 0.95em; border-left: 5px solid #39ff14; margin-bottom: 2px; }}
+    .ai-think-shell {{ background-color: #2b2b2b; color: #ffffff; padding: 15px; border-radius: 0 0 8px 8px; font-family: sans-serif; font-size: 0.95em; border-left: 5px solid #ffffff; margin-bottom: 15px; line-height: 1.6; }}
+    .how-to-use {{ background-color: #e3f2fd; border: 1px solid #2196f3; padding: 15px; border-radius: 8px; color: #0d47a1; margin-bottom: 20px; }}
+    /* 器具獨立卡片通用樣式 */
+    .eq-card {{ background-color: #ffffff; padding: 15px 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; }}
+    </style>
+    """, unsafe_allow_html=True)
+
+# 狀態管理
+if 'target_page' not in st.session_state:
+    st.session_state.target_page = "📊 營運儀表板"
+if 'user_prompt' not in st.session_state:
+    st.session_state.user_prompt = None
+if 'ai_sql_query' not in st.session_state:
+    st.session_state.ai_sql_query = None
+if 'ai_thought_process' not in st.session_state:
+    st.session_state.ai_thought_process = None
+
+# ==========================================
+# 2. 資料連線與 AI SQL 生成 (即時動態連線 TTL=2)
+# ==========================================
+conn = st.connection('mysql', type='sql')
+
+@st.cache_data(ttl=2)
+def fetch_basic_data():
+    c = conn.query("SELECT * FROM community_center;")
+    m = conn.query("SELECT * FROM member;")
+    r = conn.query("SELECT * FROM resource;")
+    b = conn.query("SELECT * FROM booking;")
+    return c, m, r, b
+
+def get_ai_sql(user_query):
+    prompt = f"""
+    你是管理系統 DBA。請嚴格遵守以下輸出格式，這對系統解析至關重要：
+    
+    【SQL指令】
+    (這裡只能放一條 SELECT 語句，禁止加任何 Markdown 標籤或反引號，結尾不要加分號)
+    【思考過程】
+    (說明你的檢索邏輯)
+    
+    規則守則：
+    1. 除非指定特定欄位，否則預設必須使用 SELECT * 顯示所有欄位。
+    2. 比對中文值必須使用單引號（如 Progress_Status = '完成'，District = '歸仁區'）。
+    3. 欄位結構清單：
+       - community_center: Center_ID, Center_Name, City, District, Street_Address, Phone, lat, lon
+       - member: Member_ID, Name, Gender, Phone, Center_ID
+       - resource: Resource_ID, REsource_Name, Type, Status
+       - booking: Booking_ID, Member_ID, Resource_ID, Booking_Time, Progress_Status
+    """
+    try:
+        res = ollama.chat(model='gemma3:4b', messages=[
+            {'role': 'system', 'content': prompt},
+            {'role': 'user', 'content': user_query}
+        ])
+        return res['message']['content']
+    except Exception:
+        return ""
+
+# 100% 真實資料庫數據撈取
+df_c, df_m, df_r, df_b = fetch_basic_data()
+
+# ==========================================
+# 3. 側邊欄 - 選單與 AI 檢索控制
+# ==========================================
+with st.sidebar:
+    st.title("🏥 決策控制中心")
+    nav_list = ["📊 營運儀表板", "📍 據點分佈圖", "👥 會員管理", "📦 資源物資管理", "📝 交易歷程紀錄", "🏢 據點詳細清單", "🤖 AI 數據深度檢索"]
+    selected = st.radio("功能選單", nav_list, index=nav_list.index(st.session_state.target_page), key="nav_radio")
+    
+    if selected != st.session_state.target_page:
+        st.session_state.target_page = selected
+        st.rerun()
+
+    st.markdown("---")
+    st.subheader("🤖 AI 資料調取助手")
+    q = st.chat_input("輸入查詢需求...", key="ai_search_input")
+    if q:
+        with st.spinner("檢索中..."):
+            ai_raw = get_ai_sql(q)
+            if "【SQL指令】" in ai_raw:
+                try:
+                    sql_p = ai_raw.split("【SQL指令】")[1].split("【思考過程】")[0].strip()
+                    for char in [";", "```sql", "```", "`"]:
+                        sql_p = sql_p.replace(char, "")
+                    thought_p = ai_raw.split("【思考過程】")[1].strip() if "【思考過程】" in ai_raw else "檢索中"
+                    
+                    st.session_state.user_prompt = q
+                    st.session_state.ai_sql_query = sql_p
+                    st.session_state.ai_thought_process = thought_p
+                    st.session_state.target_page = "🤖 AI 數據深度檢索"
+                    st.session_state.nav_radio = "🤖 AI 數據深度檢索"
+                except Exception:
+                    pass
+                st.rerun()
+
+# ==========================================
+# 4. 主畫面邏輯
+# ==========================================
+page = st.session_state.target_page
+
+if page == "📊 營運儀表板":
+    st.title("📊 平台營運實時監控（真實資料庫連線）")
+    
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("服務據點", len(df_c))
+    c2.metric("註冊會員", len(df_m))
+    c3.metric("資源物資", len(df_r))
+    c4.metric("累計預約", len(df_b))
+    st.markdown("---")
+    
+    # 🌟 重新排版：將上方的兩大圖表改為左右 1:1 對稱並排，視覺效果更精美乾淨
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.subheader("📝 租借預約狀態歷程分佈")
+        if not df_b.empty and 'Progress_Status' in df_b.columns:
+            st.bar_chart(df_b['Progress_Status'].value_counts(), stack=False)
+        else:
+            st.info("暫無預約狀態歷史數據")
+            
+    with col2:
+        st.subheader("📦 各項物資原本數量與使用數量對比分布")
+        if not df_r.empty:
+            df_total_qty = df_r.groupby('REsource_Name').size().rename('原本數量')
+            df_used_qty = df_r[df_r['Status'] == '借用中'].groupby('REsource_Name').size().rename('使用數量')
+            df_compare_chart = pd.concat([df_total_qty, df_used_qty], axis=1).fillna(0).astype(int)
+            # 左右群組並排，絕不重疊
+            st.bar_chart(df_compare_chart, stack=False)
+        else:
+            st.info("暫無資源物資分布數據")
+
+    # 5. 器具個別顯示與搜尋清單區
+    st.markdown("---")
+    st.subheader("🛠️ 每一種器具物資即時狀態燈號清單")
+    
+    search_query = st.text_input("🔍 輸入關鍵字篩選器具清單...", key="dashboard_eq_search")
+    
+    if not df_r.empty:
+        available_counts = df_r[df_r['Status'] == '可借用']['REsource_Name'].value_counts()
+        all_equipment_names = sorted(list(df_r['REsource_Name'].unique()))
+        
+        eq_data_list = []
+        for eq_name in all_equipment_names:
+            qty = int(available_counts.get(eq_name, 0))
+            eq_data_list.append({'name': eq_name, 'qty': qty})
+            
+        if search_query:
+            eq_data_list = [item for item in eq_data_list if search_query.lower() in item['name'].lower()]
+            
+        if eq_data_list:
+            grid_cols = st.columns(2)
+            for index, item in enumerate(eq_data_list):
+                target_col = grid_cols[index % 2]
+                
+                if item['qty'] > 0:
+                    light_color = DARK_GREEN
+                    status_display = f"<span style='font-size: 1.2em;'>🟢</span> 剩餘可預約數量：{item['qty']}"
+                else:
+                    light_color = "#ff003c"
+                    status_display = "🔴 目前無可用庫存 (0)"
+                    
+                target_col.markdown(f"""
+                    <div class="eq-card" style="border-left: 6px solid {light_color};">
+                        <b style="color: #333; font-size: 1.05em;">{item['name']}</b>
+                        <span style="color: {light_color}; font-weight: bold;">{status_display}</span>
+                    </div>
+                """, unsafe_allow_html=True)
+        else:
+            st.info("💡 沒有找到符合搜尋關鍵字的器具物資。")
+
+elif page == "📍 據點分佈圖":
+    st.title("📍 據點地理分佈")
+    m = folium.Map(location=[22.99, 120.25], zoom_start=12, tiles='CartoDB positron')
+    for _, row in df_c.iterrows():
+        if pd.notnull(row['lat']) and pd.notnull(row['lon']):
+            addr = f"{row.get('City','')}{row.get('District','')}{row.get('Street_Address','')}"
+            popup_html = f'<div style="width: 500px; white-space: nowrap;"><b>{row["Center_Name"]}</b>：{addr}</div>'
+            folium.Marker(location=[float(row['lat']), float(row['lon'])], popup=folium.Popup(popup_html, min_width=500), icon=folium.Icon(color='blue', icon='home')).add_to(m)
+    st_folium(m, width=1200, height=500)
+
+elif page == "👥 會員管理":
+    st.title("👥 會員中心資料查詢")
+    m_s = st.text_input("🔍 搜尋姓名或電話")
+    df_f = df_m.copy()
+    if m_s: df_f = df_f[df_f.astype(str).apply(lambda x: x.str.contains(m_s, case=False)).any(axis=1)]
+    st.dataframe(df_f, use_container_width=True, hide_index=True)
+
+elif page == "📦 資源物資管理":
+    st.title("📦 物資庫存狀態追蹤")
+    c1, c2 = st.columns(2)
+    with c1: t_f = st.selectbox("類別篩選", ["全部"] + list(df_r['Type'].unique()))
+    with c2: s_f = st.selectbox("狀態篩選", ["全部"] + list(df_r['Status'].unique()))
+    df_f = df_r.copy()
+    if t_f != "全部": df_f = df_f[df_f['Type'] == t_f]
+    if s_f != "全部": df_f = df_f[df_f['Status'] == s_f]
+    st.dataframe(df_f, use_container_width=True, hide_index=True)
+
+elif page == "📝 交易歷程紀錄":
+    st.title("📝 預約交易歷程分析")
+    df_j = conn.query("SELECT b.Booking_ID, m.Name as 會員, r.REsource_Name as 用品, b.Booking_Time, b.Progress_Status FROM booking b JOIN member m ON b.Member_ID = m.Member_ID JOIN resource r ON b.Resource_ID = r.Resource_ID;")
+    bk_s = st.text_input("🔍 搜尋關鍵字")
+    if bk_s: df_j = df_j[df_j.astype(str).apply(lambda x: x.str.contains(bk_s, case=False)).any(axis=1)]
+    st.dataframe(df_j, use_container_width=True, hide_index=True)
+
+elif page == "🏢 據點詳細清單":
+    st.title("🏢 合作據點詳細資訊")
+    d_f = st.selectbox("行政區", ["全部"] + list(df_c['District'].unique()))
+    df_f = df_c.drop(columns=['lat', 'lon'], errors='ignore')
+    if d_f != "全部": df_f = df_f[df_f['District'] == d_f]
+    st.dataframe(df_f, use_container_width=True, hide_index=True)
+
+elif page == "🤖 AI 數據深度檢索":
+    st.title("🤖 AI 數據深度檢索結果")
+    st.markdown('<div class="how-to-use"><b>💡 操作說明：</b> 在左側輸入需求，系統將自動提取數據。</div>', unsafe_allow_html=True)
+    if st.session_state.user_prompt: st.markdown(f'<div class="user-query-box"><b>💬 您的提問：</b> {st.session_state.user_prompt}</div>', unsafe_allow_html=True)
+    if st.session_state.ai_sql_query:
+        st.markdown(f'<div class="ai-command-shell"><b>[System_Execute]></b><br>{st.session_state.ai_sql_query}</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="ai-think-shell"><b>[Thinking_Process]</b><br>{st.session_state.ai_thought_process}</div>', unsafe_allow_html=True)
+        try:
+            res_df = conn.query(st.session_state.ai_sql_query)
+            if res_df.empty: st.warning("⚠️ 尚無查詢到相關資料，請換個說法重新嘗試。")
+            else: st.dataframe(res_df, use_container_width=True, hide_index=True)
+        except Exception: st.warning("⚠️ 尚無查詢到相關資料，請重新嘗試。")

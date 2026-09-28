@@ -1,0 +1,211 @@
+import streamlit as st
+import pandas as pd
+import folium
+from streamlit_folium import st_folium
+from datetime import datetime
+
+# 1. 網頁基礎配置
+st.set_page_config(page_title="智慧銀髮平台 - 終極整合版", layout="wide")
+
+# ==========================================
+# 2. 準備完整資料 (符合 2NF 規範)
+# ==========================================
+
+# 據點資料
+df_center = pd.DataFrame([
+    {"Center_ID": 1, "Center_Name": "歸仁區樂齡中心", "Location": "台南市歸仁區中正南路二段100號", "Phone": "06-2391234", "lat": 22.9566, "lon": 120.2935, "City": "台南市", "District": "歸仁區"},
+    {"Center_ID": 2, "Center_Name": "東區復興活動中心", "Location": "台南市東區裕文路100號", "Phone": "06-3315678", "lat": 22.9840, "lon": 120.2366, "City": "台南市", "District": "東區"},
+    {"Center_ID": 3, "Center_Name": "安平區石門社區", "Location": "台南市安平區安平路100號", "Phone": "06-2991122", "lat": 23.0016, "lon": 120.1633, "City": "台南市", "District": "安平區"},
+    {"Center_ID": 4, "Center_Name": "永康區大橋據點", "Location": "台南市永康區大橋二街10號", "Phone": "06-2023344", "lat": 23.0232, "lon": 120.2319, "City": "台南市", "District": "永康區"},
+    {"Center_ID": 5, "Center_Name": "仁德區成功活動中心", "Location": "台南市仁德區成功二街20號", "Phone": "06-2667788", "lat": 22.9725, "lon": 120.2638, "City": "台南市", "District": "仁德區"},
+    {"Center_ID": 6, "Center_Name": "北區大和社區", "Location": "台南市北區和緯路三段50號", "Phone": "06-2512233", "lat": 23.0118, "lon": 120.1950, "City": "台南市", "District": "北區"},
+    {"Center_ID": 7, "Center_Name": "中西區銀髮俱樂部", "Location": "台南市中西區府前路一段100號", "Phone": "06-2134455", "lat": 22.9898, "lon": 120.2023, "City": "台南市", "District": "中西區"},
+    {"Center_ID": 8, "Center_Name": "南區金華社區", "Location": "台南市南區金華路二段200號", "Phone": "06-2645566", "lat": 22.9736, "lon": 120.1864, "City": "台南市", "District": "南區"},
+    {"Center_ID": 9, "Center_Name": "安南區海尾據點", "Location": "台南市安南區海佃路一段300號", "Phone": "06-2567788", "lat": 23.0315, "lon": 120.1916, "City": "台南市", "District": "安南區"},
+    {"Center_ID": 10, "Center_Name": "新市區三里活動中心", "Location": "台南市新市區中正路150號", "Phone": "06-5998899", "lat": 23.0784, "lon": 120.2941, "City": "台南市", "District": "新市區"}
+])
+
+# 會員資料
+df_member = pd.DataFrame([
+    {"Member_ID": 1, "Gender": "男", "Name": "王大明", "Phone": "0912-345-678", "Address": "台南市歸仁區中正南路一段1號", "Mail": "wang.ming@example.com", "Center_ID": 1, "City": "台南市", "District": "歸仁區"},
+    {"Member_ID": 2, "Gender": "女", "Name": "李美玲", "Phone": "0922-333-444", "Address": "台南市東區裕文路100號", "Mail": "lee.mei@example.com", "Center_ID": 2, "City": "台南市", "District": "東區"},
+    {"Member_ID": 3, "Gender": "男", "Name": "陳建志", "Phone": "0933-444-555", "Address": "台北市信義區信義路五段7號", "Mail": "chen_cc@example.com", "Center_ID": 7, "City": "台北市", "District": "信義區"},
+    {"Member_ID": 4, "Gender": "女", "Name": "林雅惠", "Phone": "0944-555-666", "Address": "高雄市苓雅區四維三路2號", "Mail": "lin.ya@example.com", "Center_ID": 8, "City": "高雄市", "District": "苓雅區"},
+    {"Member_ID": 5, "Gender": "男", "Name": "張家豪", "Phone": "0955-666-777", "Address": "台中市西屯區台灣大道三段99號", "Mail": "chang_hao@example.com", "Center_ID": 5, "City": "台中市", "District": "西屯區"},
+    {"Member_ID": 6, "Gender": "女", "Name": "吳淑芬", "Phone": "0966-777-888", "Address": "台南市安平區永華路二段2號", "Mail": "wu_sf@example.com", "Center_ID": 3, "City": "台南市", "District": "安平區"},
+    {"Member_ID": 7, "Gender": "男", "Name": "劉冠宇", "Phone": "0977-888-999", "Address": "新北市板橋區中山路一段161號", "Mail": "liu.kuan@example.com", "Center_ID": 6, "City": "新北市", "District": "板橋區"},
+    {"Member_ID": 8, "Gender": "女", "Name": "蔡佳玲", "Phone": "0988-999-000", "Address": "桃園市桃園區縣府路1號", "Mail": "tsai.jia@example.com", "Center_ID": 10, "City": "桃園市", "District": "桃園區"},
+    {"Member_ID": 9, "Gender": "男", "Name": "楊宗翰", "Phone": "0999-000-111", "Address": "台南市永康區大橋二街10號", "Mail": "yang.ts@example.com", "Center_ID": 4, "City": "台南市", "District": "永康區"},
+    {"Member_ID": 10, "Gender": "女", "Name": "黃鈺婷", "Phone": "0900-111-222", "Address": "台南市仁德區中正路二段11號", "Mail": "huang.yu@example.com", "Center_ID": 5, "City": "台南市", "District": "仁德區"}
+])
+
+# 資源資料
+df_resource = pd.DataFrame([
+    {"Resource_ID": 1, "REsource_Name": "小型復康巴士", "Type": "車輛", "Status": "可派車"},
+    {"Resource_ID": 2, "REsource_Name": "中型復康巴士", "Type": "車輛", "Status": "出勤中"},
+    {"Resource_ID": 3, "REsource_Name": "長照接送專車", "Type": "車輛", "Status": "可派車"},
+    {"Resource_ID": 4, "REsource_Name": "無障礙計程車", "Type": "車輛", "Status": "出勤中"},
+    {"Resource_ID": 5, "REsource_Name": "日照接駁車", "Type": "車輛", "Status": "出勤中"},
+    {"Resource_ID": 6, "REsource_Name": "腋下拐杖", "Type": "輔具", "Status": "可借用"},
+    {"Resource_ID": 7, "REsource_Name": "折疊式助行器", "Type": "輔具", "Status": "借用中"},
+    {"Resource_ID": 8, "REsource_Name": "電動升降護理床", "Type": "輔具", "Status": "可借用"},
+    {"Resource_ID": 9, "REsource_Name": "標準成人輪椅", "Type": "輔具", "Status": "可借用"},
+    {"Resource_ID": 10, "REsource_Name": "鋁合金四腳拐杖", "Type": "輔具", "Status": "借用中"}
+])
+
+# 預約紀錄 (分散時間以展示統計效果)
+df_booking = pd.DataFrame([
+    {"Booking_ID": 1, "Member_ID": 1, "Resource_ID": 1, "Booking_Time": "2026-03-20 10:00:00", "Progress_Status": "已完成"},
+    {"Booking_ID": 2, "Member_ID": 2, "Resource_ID": 2, "Booking_Time": "2026-03-25 10:00:00", "Progress_Status": "已完成"},
+    {"Booking_ID": 3, "Member_ID": 3, "Resource_ID": 3, "Booking_Time": "2026-04-05 10:00:00", "Progress_Status": "已完成"},
+    {"Booking_ID": 4, "Member_ID": 4, "Resource_ID": 4, "Booking_Time": "2026-04-10 10:00:00", "Progress_Status": "已預約"},
+    {"Booking_ID": 5, "Member_ID": 5, "Resource_ID": 5, "Booking_Time": "2026-04-12 10:00:00", "Progress_Status": "已預約"},
+    {"Booking_ID": 6, "Member_ID": 6, "Resource_ID": 6, "Booking_Time": "2026-04-12 15:00:00", "Progress_Status": "已預約"},
+    {"Booking_ID": 7, "Member_ID": 7, "Resource_ID": 7, "Booking_Time": "2026-04-18 10:00:00", "Progress_Status": "已預約"},
+    {"Booking_ID": 8, "Member_ID": 8, "Resource_ID": 8, "Booking_Time": "2026-04-20 10:00:00", "Progress_Status": "已預約"},
+    {"Booking_ID": 9, "Member_ID": 9, "Resource_ID": 9, "Booking_Time": "2026-04-21 09:00:00", "Progress_Status": "已預約"},
+    {"Booking_ID": 10, "Member_ID": 10, "Resource_ID": 10, "Booking_Time": "2026-04-21 16:00:00", "Progress_Status": "已預約"}
+])
+# 強制轉換時間格式
+df_booking['Booking_Time'] = pd.to_datetime(df_booking['Booking_Time'])
+
+# ==========================================
+# 3. 側邊欄與全域 AI 查詢
+# ==========================================
+st.sidebar.title("智慧銀髮平台選單")
+page = st.sidebar.radio("請選擇查看功能：", ["數據儀表板", "據點分佈地圖", "會員資料管理", "預約交易紀錄", "共享資源管理", "據點詳細清單"])
+
+st.sidebar.markdown("---")
+st.sidebar.subheader("💬 AI 快速查詢")
+ai_query = st.sidebar.chat_input("全域搜尋 (例如：歸仁、王大明)...")
+
+# ==========================================
+# 4. 主畫面顯示邏輯
+# ==========================================
+st.title("智慧銀髮生活支持與資源共享平台")
+
+# AI 全域搜尋回應
+if ai_query:
+    with st.expander(f"🤖 搜尋結果：{ai_query}", expanded=True):
+        m_find = df_member[df_member.astype(str).apply(lambda x: x.str.contains(ai_query, case=False)).any(axis=1)]
+        if not m_find.empty: st.write("👥 會員資訊："), st.dataframe(m_find, hide_index=True)
+    st.markdown("---")
+
+# --- 分頁內容 ---
+
+if page == "數據儀表板":
+    st.header("📊 借出數量統計報表")
+    
+    # 核心 Metrics
+    col1, col2, col3, col4 = st.columns(4)
+    total_loans = len(df_booking)
+    # 本月統計 (2026-04)
+    this_month_val = len(df_booking[df_booking['Booking_Time'].dt.month == 4])
+    
+    col1.metric("總累計借出", f"{total_loans} 件")
+    col2.metric("本月借出量", f"{this_month_val} 件", "+2")
+    col3.metric("營運據點", f"{len(df_center)} 處")
+    col4.metric("活躍會員", f"{len(df_member)} 名")
+
+    st.markdown("---")
+
+    # 每日、每週、每月圖表
+    tab1, tab2, tab3 = st.tabs(["📅 每日統計", "🗓️ 每週統計", "📊 每月統計"])
+
+    with tab1:
+        st.subheader("每日資源借出趨勢")
+        daily_stats = df_booking.groupby(df_booking['Booking_Time'].dt.date).size()
+        st.bar_chart(daily_stats)
+
+    with tab2:
+        st.subheader("每週資源借出分佈")
+        # 標記週別 (ISO Week)
+        df_booking['Week'] = df_booking['Booking_Time'].dt.isocalendar().week
+        weekly_stats = df_booking.groupby('Week').size()
+        st.line_chart(weekly_stats)
+
+    with tab3:
+        st.subheader("每月資源借出報表")
+        df_booking['Month'] = df_booking['Booking_Time'].dt.to_period('M').astype(str)
+        monthly_stats = df_booking.groupby('Month').size()
+        st.bar_chart(monthly_stats)
+        
+    st.markdown("---")
+    # 資源類別分析 (輔助報表)
+    st.subheader("📦 借出資源類別比例")
+    merged_data = pd.merge(df_booking, df_resource, on='Resource_ID')
+    st.bar_chart(merged_data['Type'].value_counts())
+
+elif page == "預約交易紀錄":
+    st.header("📝 預約交易歷程")
+    c1, c2 = st.columns([2, 1])
+    with c1: b_search = st.text_input("🔍 搜尋姓名、日期或用品名稱：")
+    with c2: b_status = st.selectbox("進度狀態篩選：", ["全部"] + list(df_booking["Progress_Status"].unique()))
+    
+    # 關聯資料取得姓名與用品名稱
+    display_booking = pd.merge(df_booking, df_member[['Member_ID', 'Name']], on='Member_ID', how='left')
+    display_booking = pd.merge(display_booking, df_resource[['Resource_ID', 'REsource_Name']], on='Resource_ID', how='left')
+    display_booking = display_booking.rename(columns={'Name': '使用者姓名', 'REsource_Name': '用品名稱'})
+    display_booking = display_booking[['Booking_ID', '使用者姓名', '用品名稱', 'Booking_Time', 'Progress_Status']]
+    
+    if b_search:
+        display_booking = display_booking[display_booking.astype(str).apply(lambda x: x.str.contains(b_search, case=False)).any(axis=1)]
+    if b_status != "全部":
+        display_booking = display_booking[display_booking["Progress_Status"] == b_status]
+    st.dataframe(display_booking, use_container_width=True, hide_index=True)
+
+elif page == "據點分佈地圖":
+    st.header("📍 社區據點分佈圖")
+    map_search = st.text_input("🔍 搜尋據點名稱或行政區：")
+    
+    m = folium.Map(location=[22.99, 120.25], zoom_start=12)
+    map_data = df_center
+    if map_search:
+        map_data = df_center[df_center.astype(str).apply(lambda x: x.str.contains(map_search, case=False)).any(axis=1)]
+    
+    for _, row in map_data.iterrows():
+        folium.Marker([row['lat'], row['lon']], tooltip=row['Center_Name']).add_to(m)
+    st_folium(m, width=1200, height=500)
+
+elif page == "會員資料管理":
+    st.header("👥 會員 (Member) 管理")
+    c1, c2, c3 = st.columns([2, 1, 1])
+    with c1: m_search = st.text_input("🔍 搜尋關鍵字：")
+    with c2: selected_city = st.selectbox("縣市篩選：", ["全部"] + sorted(list(df_member['City'].unique())))
+    with c3:
+        dist_opts = ["全部"] + sorted(list(df_member[df_member['City'] == selected_city]['District'].unique())) if selected_city != "全部" else ["全部"] + sorted(list(df_member['District'].unique()))
+        selected_dist = st.selectbox("行政區篩選：", dist_opts)
+    
+    filtered_m = df_member.copy()
+    if m_search: filtered_m = filtered_m[filtered_m.astype(str).apply(lambda x: x.str.contains(m_search, case=False)).any(axis=1)]
+    if selected_city != "全部": filtered_m = filtered_m[filtered_m['City'] == selected_city]
+    if selected_dist != "全部": filtered_m = filtered_m[filtered_m['District'] == selected_dist]
+    st.dataframe(filtered_m, use_container_width=True, hide_index=True)
+
+elif page == "共享資源管理":
+    st.header("📦 資源與物資管理")
+    c1, c2, c3 = st.columns([2, 1, 1])
+    with c1: r_search = st.text_input("🔍 搜尋資源名稱：")
+    with c2: r_type = st.selectbox("類別篩選：", ["全部"] + list(df_resource["Type"].unique()))
+    with c3: r_status = st.selectbox("狀態篩選：", ["全部"] + list(df_resource["Status"].unique()))
+    
+    filtered_r = df_resource
+    if r_search: filtered_r = filtered_r[filtered_r["REsource_Name"].str.contains(r_search, case=False)]
+    if r_type != "全部": filtered_r = filtered_r[filtered_r["Type"] == r_type]
+    if r_status != "全部": filtered_r = filtered_r[filtered_r["Status"] == r_status]
+    st.dataframe(filtered_r, use_container_width=True, hide_index=True)
+
+elif page == "據點詳細清單":
+    st.header("🏢 據點詳細清單")
+    c1, c2, c3 = st.columns([2, 1, 1])
+    with c1: l_search = st.text_input("🔍 搜尋據點名稱或地址：", key="center_search")
+    with c2: selected_city = st.selectbox("縣市篩選：", ["全部"] + sorted(list(df_center['City'].unique())), key="center_city")
+    with c3:
+        dist_opts = ["全部"] + sorted(list(df_center[df_center['City'] == selected_city]['District'].unique())) if selected_city != "全部" else ["全部"] + sorted(list(df_center['District'].unique()))
+        selected_dist = st.selectbox("行政區篩選：", dist_opts, key="center_dist")
+    
+    filtered_l = df_center.drop(columns=['lat', 'lon'])
+    if l_search: filtered_l = filtered_l[filtered_l.astype(str).apply(lambda x: x.str.contains(l_search, case=False)).any(axis=1)]
+    if selected_city != "全部": filtered_l = filtered_l[filtered_l['City'] == selected_city]
+    if selected_dist != "全部": filtered_l = filtered_l[filtered_l['District'] == selected_dist]
+    st.dataframe(filtered_l, use_container_width=True, hide_index=True)
